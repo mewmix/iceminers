@@ -1,8 +1,7 @@
-// ecs.ts
 export type Entity = number;
 
 let nextEntityId = 0;
-export const activeEntities = new Set<Entity>(); // Use a Set for efficient iteration
+export const activeEntities = new Set<Entity>();
 
 // Basic Components
 export interface Transform {
@@ -24,13 +23,13 @@ export interface SphereCollider {
   radius: number;
 }
 
-// Storage (simple arrays indexed by entity ID)
+// Storage arrays indexed by entity ID
 const transforms: Array<Transform | null> = [];
 const noiseEmitters: Array<NoiseEmitter | null> = [];
 const wormAIs: Array<WormAI | null> = [];
 const sphereColliders: Array<SphereCollider | null> = [];
 
-// Create a new entity
+/** Create a new entity and reserve component slots. */
 export function createEntity(): Entity {
   const e = nextEntityId++;
   activeEntities.add(e);
@@ -41,7 +40,7 @@ export function createEntity(): Entity {
   return e;
 }
 
-// Remove an entity
+/** Remove entity and clear its components. */
 export function removeEntity(e: Entity) {
   activeEntities.delete(e);
   transforms[e] = null;
@@ -50,13 +49,13 @@ export function removeEntity(e: Entity) {
   sphereColliders[e] = null;
 }
 
-// "Add" component helpers
+/** Add components. */
 export function addTransform(e: Entity, c: Transform) { transforms[e] = c; }
 export function addNoiseEmitter(e: Entity, c: NoiseEmitter) { noiseEmitters[e] = c; }
 export function addWormAI(e: Entity, c: WormAI) { wormAIs[e] = c; }
 export function addSphereCollider(e: Entity, c: SphereCollider) { sphereColliders[e] = c; }
 
-// Getters
+/** Getters. */
 export function getTransform(e: Entity) { return transforms[e]; }
 export function getNoiseEmitter(e: Entity) { return noiseEmitters[e]; }
 export function getWormAI(e: Entity) { return wormAIs[e]; }
