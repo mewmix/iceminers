@@ -6,11 +6,15 @@
     "dev": "webpack serve --mode development"
   },
   "devDependencies": {
+    "@types/three": "^0.173.0",
     "html-webpack-plugin": "^5.6.3",
     "ts-loader": "^9.5.2",
     "typescript": "^5.7.3",
     "webpack": "^5.75.0",
     "webpack-cli": "^5.0.0",
     "webpack-dev-server": "^4.15.2"
+  },
+  "dependencies": {
+    "three": "^0.173.0"
   }
 }

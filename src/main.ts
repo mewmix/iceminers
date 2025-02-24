@@ -1,31 +1,40 @@
+//main.ts
 import {
   createEntity,
   addTransform,
   addNoiseEmitter,
   addWormAI,
-  addSphereCollider,
-  getTransform,
+  addThumper,
   getNoiseEmitter,
+  addSphereCollider,
+  addWormSegment,
+  addIceDeposit,
+  getTransform,
   activeEntities,
   Entity,
 } from "./ecs";
-
-import { collisionSystem, noiseSystem, aiSystem } from "./system";
+import {
+  collisionSystem,
+  noiseSystem,
+  aiSystem,
+  wormBodySystem,
+  miningSystem,
+} from "./systems";
 import { initRenderer } from "./renderer";
 
-/** Simple physics update for movement. */
+// Simple physics update (applies velocity to position)
 function physicsSystem(delta: number) {
   for (const entity of activeEntities) {
-    const transform = getTransform(entity);
-    if (transform) {
-      transform.position[0] += transform.velocity[0] * delta;
-      transform.position[1] += transform.velocity[1] * delta;
-      transform.position[2] += transform.velocity[2] * delta;
+    const t = getTransform(entity);
+    if (t) {
+      t.position[0] += t.velocity[0] * delta;
+      t.position[1] += t.velocity[1] * delta;
+      t.position[2] += t.velocity[2] * delta;
     }
   }
 }
 
-// Input handling
+// Input state
 type ControlState = { moveX: number; moveZ: number; mining: boolean };
 const controls: ControlState = { moveX: 0, moveZ: 0, mining: false };
 
@@ -37,9 +46,18 @@ function setupInput() {
       case "ArrowUp":    controls.moveZ = -1; break;
       case "ArrowDown":  controls.moveZ =  1; break;
       case " ":          controls.mining = true; break;
+      case "t":
+        // Deploy a thumper at player's current location
+        const playerT = getTransform(player);
+        if (playerT) {
+          const thumper = createEntity();
+          addTransform(thumper, { position: [...playerT.position], velocity: [0, 0, 0] });
+          addThumper(thumper, { noiseLevel: 1.0, active: true, duration: 5 });
+          addSphereCollider(thumper, { radius: 0.5 });
+        }
+        break;
     }
   });
-
   window.addEventListener("keyup", (e) => {
     switch (e.key) {
       case "ArrowLeft":
@@ -52,61 +70,67 @@ function setupInput() {
 }
 
 function updatePlayer(player: Entity) {
-  const transform = getTransform(player);
+  const t = getTransform(player);
   const noise = getNoiseEmitter(player);
-  if (!transform || !noise) return;
-
+  if (!t || !noise) return;
   const speed = 5;
-  transform.velocity[0] = controls.moveX * speed;
-  transform.velocity[2] = controls.moveZ * speed;
-
-  noise.isEmitting = controls.mining;
-  noise.baseNoise = controls.mining ? 0.2 : 0;
+  t.velocity[0] = controls.moveX * speed;
+  t.velocity[2] = controls.moveZ * speed;
+  const isMoving = (controls.moveX !== 0 || controls.moveZ !== 0);
+  if (isMoving && controls.mining) {
+    noise.baseNoise = 0.2;
+  } else if (isMoving) {
+    noise.baseNoise = 0.05;
+  } else if (controls.mining) {
+    noise.baseNoise = 0.15;
+  } else {
+    noise.baseNoise = 0;
+  }
+  noise.isEmitting = noise.baseNoise > 0;
 }
 
-// Global references
-let worm: Entity;
+// Global entity references
 let player: Entity;
+let wormHead: Entity;
 let renderer: ReturnType<typeof initRenderer>;
 let gameOver = false;
 
-/** Check direct collision between the player and worm for game over. */
-function checkCollisions() {
-  const pTransform = getTransform(player);
-  const wTransform = getTransform(worm);
-  if (!pTransform || !wTransform) return;
-
-  const dx = pTransform.position[0] - wTransform.position[0];
-  const dy = pTransform.position[1] - wTransform.position[1];
-  const dz = pTransform.position[2] - wTransform.position[2];
-  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-  // Radii: 1 for player, 2 for worm (below).
-  if (dist < 1 + 2) {
-    gameOver = true;
-  }
-}
-
 function setupGame() {
-  worm = createEntity();
-  addTransform(worm, { position: [0, -5, 0], velocity: [0, 0, 0] });
-  addWormAI(worm, { alertLevel: 0, threshold: 5 });
-  addSphereCollider(worm, { radius: 2 });
+  // Spawn the worm well below the ground (y=100) so it "emerges" when alerted
+  wormHead = createEntity();
+  addTransform(wormHead, { position: [0, 100, 0], velocity: [0, 0, 0] });
+  addWormAI(wormHead, { alertLevel: 0, threshold: 5 });
+  addSphereCollider(wormHead, { radius: 2 });
+  addWormSegment(wormHead, { followDelay: 0 });
+  const wormSegments: Entity[] = [wormHead];
+  // Add two body segments for a simple segmented worm
+  for (let i = 1; i < 3; i++) {
+    const seg = createEntity();
+    addTransform(seg, { position: [0, 100 + i * 1.5, 0], velocity: [0, 0, 0] });
+    addSphereCollider(seg, { radius: 2 - i * 0.3 });
+    addWormSegment(seg, { followDelay: i * 0.1, targetSegment: wormSegments[i - 1] });
+    wormSegments.push(seg);
+  }
+  (window as any).wormSegments = wormSegments;
+  (window as any).wormHead = wormHead;
 
+  // Create the player
   player = createEntity();
   addTransform(player, { position: [0, 0, 0], velocity: [0, 0, 0] });
   addNoiseEmitter(player, { baseNoise: 0, isEmitting: false });
   addSphereCollider(player, { radius: 1 });
-
-  // Expose globally for the renderer or collision checks if needed.
   (window as any).player = player;
-  (window as any).worm = worm;
+
+  // Create an ice deposit resource
+  const deposit = createEntity();
+  addTransform(deposit, { position: [10, 0, 10], velocity: [0, 0, 0] });
+  addIceDeposit(deposit, { amount: 100 });
+  addSphereCollider(deposit, { radius: 2 });
 }
 
 async function main() {
   const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
   renderer = initRenderer(canvas);
-
   setupInput();
   setupGame();
 
@@ -126,14 +150,25 @@ async function main() {
     updatePlayer(player);
     physicsSystem(deltaSec);
     collisionSystem(deltaSec);
-    noiseSystem(deltaSec, worm);
-    aiSystem(worm, deltaSec);
-    checkCollisions();
+    noiseSystem(deltaSec, wormHead);
+    aiSystem(wormHead, deltaSec);
+    wormBodySystem(deltaSec);
+    miningSystem(deltaSec, player);
+
+    // Check if worm head is close enough to the player for game over
+    const pT = getTransform(player);
+    const wT = getTransform(wormHead);
+    if (pT && wT) {
+      const dx = pT.position[0] - wT.position[0];
+      const dy = pT.position[1] - wT.position[1];
+      const dz = pT.position[2] - wT.position[2];
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < 3) gameOver = true;
+    }
 
     renderer.render([...activeEntities], false);
     requestAnimationFrame(gameLoop);
   }
-
   requestAnimationFrame(gameLoop);
 }
 
