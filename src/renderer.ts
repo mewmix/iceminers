@@ -43,6 +43,23 @@ export function initRenderer(canvas: HTMLCanvasElement) {
     renderer,
     entityMeshes,
     render: (entities: Entity[], gameOver: boolean) => {
+      
+        // Update camera to follow the player
+  const playerT = getTransform((window as any).player);
+  if (playerT) {
+    const offsetY = 10;  // Height above the player
+    const offsetZ = 10;  // Distance behind the player
+    camera.position.set(
+      playerT.position[0],
+      playerT.position[1] + offsetY,
+      playerT.position[2] + offsetZ
+    );
+    camera.lookAt(
+      playerT.position[0],
+      playerT.position[1],
+      playerT.position[2]
+    );
+  }
       // Update entity meshes based on ECS positions
       for (const e of entities) {
         const t = getTransform(e);

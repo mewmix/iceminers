@@ -42,7 +42,7 @@ export function noiseSystem(delta: number, wormEntity: Entity): void {
     const dx = et.position[0] - wormT.position[0];
     const dy = et.position[1] - wormT.position[1];
     const dz = et.position[2] - wormT.position[2];
-    const distSq = dx * dx + dy * dy + dz * dz + 1e-5;
+    const distSq = dx * dx + dz * dz + 1e-5;
 
     const effectiveNoise = noise / distSq;
     // Track the loudest position
