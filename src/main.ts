@@ -98,7 +98,7 @@ let gameOver = false;
 function setupGame() {
   // Spawn the worm well below the ground (y=100) so it "emerges" when alerted
   wormHead = createEntity();
-  addTransform(wormHead, { position: [0, 100, 0], velocity: [0, 0, 0] });
+  addTransform(wormHead, { position: [0, 10, 0], velocity: [0, 0, 0] });
   addWormAI(wormHead, { alertLevel: 0, threshold: 5 });
   addSphereCollider(wormHead, { radius: 2 });
   addWormSegment(wormHead, { followDelay: 0 });
