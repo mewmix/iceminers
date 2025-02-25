@@ -160,7 +160,7 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   // Entity management
   const entityMeshes = new Map<Entity, THREE.Mesh>();
   createHUD();
-
+  
   // Handle window resize
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -198,6 +198,7 @@ export function initRenderer(canvas: HTMLCanvasElement) {
           new THREE.Vector3(...playerT.position),
           wormPos
         );
+        
       }
 
       // Update entities

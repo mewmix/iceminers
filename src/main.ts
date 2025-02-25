@@ -78,11 +78,11 @@ function updatePlayer(player: Entity) {
   t.velocity[2] = controls.moveZ * speed;
   const isMoving = (controls.moveX !== 0 || controls.moveZ !== 0);
   if (isMoving && controls.mining) {
-    noise.baseNoise = 0.2;
+    noise.baseNoise = 0.5;  // From 0.2
   } else if (isMoving) {
-    noise.baseNoise = 0.05;
+    noise.baseNoise = 0.2;  // From 0.05 
   } else if (controls.mining) {
-    noise.baseNoise = 0.15;
+    noise.baseNoise = 0.3;  // From 0.15
   } else {
     noise.baseNoise = 0;
   }
