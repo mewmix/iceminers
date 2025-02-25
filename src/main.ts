@@ -38,20 +38,52 @@ function physicsSystem(delta: number) {
 type ControlState = { moveX: number; moveZ: number; mining: boolean };
 const controls: ControlState = { moveX: 0, moveZ: 0, mining: false };
 
+// Detect Mobile
+function isMobileDevice() {
+  return (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    )
+  );
+}
+
+// Decide which input to set up
 function setupInput() {
+  if (isMobileDevice()) {
+    setupMobileControls();
+  } else {
+    setupDesktopControls();
+  }
+}
+
+// Desktop controls (unchanged from your code)
+function setupDesktopControls() {
   window.addEventListener("keydown", (e) => {
     switch (e.key) {
-      case "ArrowLeft":  controls.moveX = -1; break;
-      case "ArrowRight": controls.moveX =  1; break;
-      case "ArrowUp":    controls.moveZ = -1; break;
-      case "ArrowDown":  controls.moveZ =  1; break;
-      case " ":          controls.mining = true; break;
+      case "ArrowLeft":
+        controls.moveX = -1;
+        break;
+      case "ArrowRight":
+        controls.moveX = 1;
+        break;
+      case "ArrowUp":
+        controls.moveZ = -1;
+        break;
+      case "ArrowDown":
+        controls.moveZ = 1;
+        break;
+      case " ":
+        controls.mining = true;
+        break;
       case "t":
         // Deploy a thumper at player's current location
         const playerT = getTransform(player);
         if (playerT) {
           const thumper = createEntity();
-          addTransform(thumper, { position: [...playerT.position], velocity: [0, 0, 0] });
+          addTransform(thumper, {
+            position: [...playerT.position],
+            velocity: [0, 0, 0],
+          });
           addThumper(thumper, { noiseLevel: 1.0, active: true, duration: 5 });
           addSphereCollider(thumper, { radius: 0.5 });
         }
@@ -61,28 +93,72 @@ function setupInput() {
   window.addEventListener("keyup", (e) => {
     switch (e.key) {
       case "ArrowLeft":
-      case "ArrowRight": controls.moveX = 0; break;
+      case "ArrowRight":
+        controls.moveX = 0;
+        break;
       case "ArrowUp":
-      case "ArrowDown":  controls.moveZ = 0; break;
-      case " ":          controls.mining = false; break;
+      case "ArrowDown":
+        controls.moveZ = 0;
+        break;
+      case " ":
+        controls.mining = false;
+        break;
     }
   });
 }
 
+// Minimal mobile controls example
+function setupMobileControls() {
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  window.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+      // Single touch: read initial position
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      controls.mining = false;
+    } else if (e.touches.length === 2) {
+      // Two-finger touch => enable mining
+      controls.mining = true;
+    }
+  });
+
+  window.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 1) {
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      // Simple horizontal = moveX, vertical = moveZ
+      controls.moveX = dx > 20 ? 1 : dx < -20 ? -1 : 0;
+      controls.moveZ = dy > 20 ? 1 : dy < -20 ? -1 : 0;
+    }
+  });
+
+  window.addEventListener("touchend", () => {
+    // Reset on touch end
+    controls.moveX = 0;
+    controls.moveZ = 0;
+    controls.mining = false;
+  });
+}
+
+// Update player velocity and noise
 function updatePlayer(player: Entity) {
   const t = getTransform(player);
   const noise = getNoiseEmitter(player);
   if (!t || !noise) return;
+
   const speed = 5;
   t.velocity[0] = controls.moveX * speed;
   t.velocity[2] = controls.moveZ * speed;
-  const isMoving = (controls.moveX !== 0 || controls.moveZ !== 0);
+
+  const isMoving = controls.moveX !== 0 || controls.moveZ !== 0;
   if (isMoving && controls.mining) {
-    noise.baseNoise = 0.5;  // From 0.2
+    noise.baseNoise = 0.5; // from 0.2
   } else if (isMoving) {
-    noise.baseNoise = 0.2;  // From 0.05 
+    noise.baseNoise = 0.2; // from 0.05
   } else if (controls.mining) {
-    noise.baseNoise = 0.3;  // From 0.15
+    noise.baseNoise = 0.3; // from 0.15
   } else {
     noise.baseNoise = 0;
   }
@@ -106,9 +182,15 @@ function setupGame() {
   // Add two body segments for a simple segmented worm
   for (let i = 1; i < 3; i++) {
     const seg = createEntity();
-    addTransform(seg, { position: [0, 100 + i * 1.5, 0], velocity: [0, 0, 0] });
+    addTransform(seg, {
+      position: [0, 100 + i * 1.5, 0],
+      velocity: [0, 0, 0],
+    });
     addSphereCollider(seg, { radius: 2 - i * 0.3 });
-    addWormSegment(seg, { followDelay: i * 0.1, targetSegment: wormSegments[i - 1] });
+    addWormSegment(seg, {
+      followDelay: i * 0.1,
+      targetSegment: wormSegments[i - 1],
+    });
     wormSegments.push(seg);
   }
   (window as any).wormSegments = wormSegments;
@@ -131,6 +213,8 @@ function setupGame() {
 async function main() {
   const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
   renderer = initRenderer(canvas);
+
+  // Switch between mobile or desktop input
   setupInput();
   setupGame();
 
@@ -173,4 +257,3 @@ async function main() {
 }
 
 main();
-
