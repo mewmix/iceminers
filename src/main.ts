@@ -1,4 +1,4 @@
-//main.ts
+// main.ts
 import {
   createEntity,
   addTransform,
@@ -56,7 +56,7 @@ function setupInput() {
   }
 }
 
-// Desktop controls (unchanged from your code)
+// Desktop controls
 function setupDesktopControls() {
   window.addEventListener("keydown", (e) => {
     switch (e.key) {
@@ -114,12 +114,10 @@ function setupMobileControls() {
 
   window.addEventListener("touchstart", (e) => {
     if (e.touches.length === 1) {
-      // Single touch: read initial position
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       controls.mining = false;
     } else if (e.touches.length === 2) {
-      // Two-finger touch => enable mining
       controls.mining = true;
     }
   });
@@ -128,14 +126,12 @@ function setupMobileControls() {
     if (e.touches.length === 1) {
       const dx = e.touches[0].clientX - touchStartX;
       const dy = e.touches[0].clientY - touchStartY;
-      // Simple horizontal = moveX, vertical = moveZ
       controls.moveX = dx > 20 ? 1 : dx < -20 ? -1 : 0;
       controls.moveZ = dy > 20 ? 1 : dy < -20 ? -1 : 0;
     }
   });
 
   window.addEventListener("touchend", () => {
-    // Reset on touch end
     controls.moveX = 0;
     controls.moveZ = 0;
     controls.mining = false;
@@ -154,15 +150,16 @@ function updatePlayer(player: Entity) {
 
   const isMoving = controls.moveX !== 0 || controls.moveZ !== 0;
   if (isMoving && controls.mining) {
-    noise.baseNoise = 0.5; // from 0.2
+    noise.baseNoise = 0.5;
   } else if (isMoving) {
-    noise.baseNoise = 0.2; // from 0.05
+    noise.baseNoise = 0.2;
   } else if (controls.mining) {
-    noise.baseNoise = 0.3; // from 0.15
+    noise.baseNoise = 0.3;
   } else {
     noise.baseNoise = 0;
   }
   noise.isEmitting = noise.baseNoise > 0;
+  console.log(`isMoving: ${isMoving}, baseNoise: ${noise.baseNoise}`); // Debug noise generation
 }
 
 // Global entity references
@@ -172,10 +169,10 @@ let renderer: ReturnType<typeof initRenderer>;
 let gameOver = false;
 
 function setupGame() {
-  // Spawn the worm well below the ground (y=100) so it "emerges" when alerted
+  // Spawn the worm well below the ground so it emerges when alerted
   wormHead = createEntity();
-  addTransform(wormHead, { position: [0, 10, 0], velocity: [0, 0, 0] });
-  addWormAI(wormHead, { alertLevel: 0, threshold: 5 });
+  addTransform(wormHead, { position: [0, -100, 0], velocity: [0, 0, 0] });
+  addWormAI(wormHead, { alertLevel: 0, threshold: 1 }); // Lowered threshold to 1
   addSphereCollider(wormHead, { radius: 2 });
   addWormSegment(wormHead, { followDelay: 0 });
   const wormSegments: Entity[] = [wormHead];
@@ -183,7 +180,7 @@ function setupGame() {
   for (let i = 1; i < 3; i++) {
     const seg = createEntity();
     addTransform(seg, {
-      position: [0, 100 + i * 1.5, 0],
+      position: [0, -100 - i * 1.5, 0], // Deeper underground
       velocity: [0, 0, 0],
     });
     addSphereCollider(seg, { radius: 2 - i * 0.3 });

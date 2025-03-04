@@ -13,7 +13,6 @@ import {
   removeEntity,
 } from "./ecs";
 
-/** Noise system: increases worms alertLevel based on noise emitters and active thumpers. */
 export function noiseSystem(delta: number, wormEntity: Entity): void {
   const wormT = getTransform(wormEntity);
   const wormAI = getWormAI(wormEntity);
@@ -29,51 +28,41 @@ export function noiseSystem(delta: number, wormEntity: Entity): void {
     if ((!emitter || !emitter.isEmitting) && !thumper) continue;
     if (!et) continue;
 
-    // Base noise from player or from a thumper
     let noise = emitter ? emitter.baseNoise : 0;
     if (thumper && thumper.active) {
       noise = thumper.noiseLevel;
-      // Decrease thumper duration
       thumper.duration -= delta;
       if (thumper.duration <= 0) thumper.active = false;
     }
 
-    // Distance-based attenuation
     const dx = et.position[0] - wormT.position[0];
     const dy = et.position[1] - wormT.position[1];
     const dz = et.position[2] - wormT.position[2];
-    const distSq = dx * dx + dz * dz + 1e-5;
+    const distSq = dx * dx + dy * dy + dz * dz + 1e-5;
+    const effectiveNoise = (noise * 100) / distSq; // Amplify noise impact
 
-    const effectiveNoise = noise / distSq;
-    // Track the loudest position
     if (effectiveNoise > maxNoise) {
       maxNoise = effectiveNoise;
       loudestPos = [...et.position];
     }
-
-    // Accumulate worm's alert level
     wormAI.alertLevel += effectiveNoise * delta;
+    console.log(`Entity ${e}: noise=${noise}, effectiveNoise=${effectiveNoise.toFixed(5)}, alertLevel=${wormAI.alertLevel.toFixed(2)}`); // Debug
   }
 
-  // If over threshold, move worm to the loudest noise source
   if (wormAI.alertLevel >= wormAI.threshold && loudestPos) {
     const dx = loudestPos[0] - wormT.position[0];
     const dy = loudestPos[1] - wormT.position[1];
     const dz = loudestPos[2] - wormT.position[2];
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-
     const speed = 5;
     wormT.velocity[0] = (dx / dist) * speed;
     wormT.velocity[1] = (dy / dist) * speed;
     wormT.velocity[2] = (dz / dist) * speed;
-
-    wormAI.alertLevel = 0;
+    console.log(`Worm chasing: pos=${loudestPos}, vel=[${wormT.velocity[0]}, ${wormT.velocity[1]}, ${wormT.velocity[2]}]`); // Debug
   } else {
-    // Gradual decay
     wormAI.alertLevel = Math.max(0, wormAI.alertLevel - delta * 0.5);
   }
 }
-
 /** Collision system with a simple spatial grid. */
 export function collisionSystem(delta: number): void {
   // Grab entities with both transform and collider
@@ -181,16 +170,13 @@ export function aiSystem(wormEntity: Entity, delta: number): void {
   const t = getTransform(wormEntity);
   if (!wormAI || !t) return;
 
-  // Emerge from "underground" if worm is alerted
-  if (t.position[1] > 0 && wormAI.alertLevel > 0) {
-    const ascendSpeed = 30;
-    t.position[1] = Math.max(t.position[1] - ascendSpeed * delta, 0);
-  }
-
-  // Low alert => random wandering
-  if (wormAI.alertLevel < wormAI.threshold * 0.5) {
+  if (wormAI.alertLevel < wormAI.threshold) {
     t.velocity[0] = Math.sin(performance.now() * 0.002) * 10;
     t.velocity[2] = Math.cos(performance.now() * 0.002) * 10;
+    // Move toward y=0
+    const targetY = 0;
+    const dy = targetY - t.position[1];
+    t.velocity[1] = dy * 5; // Smoothly adjust to surface level
   }
 }
 
