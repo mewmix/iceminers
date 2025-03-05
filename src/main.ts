@@ -12,6 +12,13 @@ import {
   getTransform,
   activeEntities,
   Entity,
+  getSphereCollider,
+  getThumper,
+  getIceDeposit,
+  getWormSegment,
+  addCrack,
+  getCrack,
+  removeEntity,
 } from "./ecs";
 import {
   collisionSystem,
@@ -30,6 +37,12 @@ function physicsSystem(delta: number) {
       t.position[0] += t.velocity[0] * delta;
       t.position[1] += t.velocity[1] * delta;
       t.position[2] += t.velocity[2] * delta;
+
+      // Prevent the player from sinking below the map
+      if (entity === player && t.position[1] < 0) {
+        t.position[1] = 0;
+        t.velocity[1] = 0; // Stop downward movement
+      }
     }
   }
 }
@@ -38,12 +51,18 @@ function physicsSystem(delta: number) {
 type ControlState = { moveX: number; moveZ: number; mining: boolean };
 const controls: ControlState = { moveX: 0, moveZ: 0, mining: false };
 
+// Game state
+let thumperCount = 3; // Finite thumpers
+let totalIceMined = 0; // Resource tracking
+let roundTimeLeft = 60; // 60-second rounds
+let roundNumber = 1;
+let supplyDropTimer = 10; // Seconds until next supply drop
+let wasUnderground = true; // Tracks if worm was underground last frame
+
 // Detect Mobile
 function isMobileDevice() {
-  return (
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent
-    )
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
   );
 }
 
@@ -76,16 +95,21 @@ function setupDesktopControls() {
         controls.mining = true;
         break;
       case "t":
-        // Deploy a thumper at player's current location
-        const playerT = getTransform(player);
-        if (playerT) {
-          const thumper = createEntity();
-          addTransform(thumper, {
-            position: [...playerT.position],
-            velocity: [0, 0, 0],
-          });
-          addThumper(thumper, { noiseLevel: 1.0, active: true, duration: 5 });
-          addSphereCollider(thumper, { radius: 0.5 });
+        if (thumperCount > 0) {
+          const playerT = getTransform(player);
+          if (playerT) {
+            const thumper = createEntity();
+            addTransform(thumper, {
+              position: [...playerT.position],
+              velocity: [0, 0, 0],
+            });
+            addThumper(thumper, { noiseLevel: 1.0, active: true, duration: 5 });
+            addSphereCollider(thumper, { radius: 0.5 });
+            thumperCount--;
+            console.log(`Thumper deployed! Remaining: ${thumperCount}`);
+          }
+        } else {
+          console.log("No thumpers left!");
         }
         break;
     }
@@ -159,28 +183,92 @@ function updatePlayer(player: Entity) {
     noise.baseNoise = 0;
   }
   noise.isEmitting = noise.baseNoise > 0;
-  console.log(`isMoving: ${isMoving}, baseNoise: ${noise.baseNoise}`); // Debug noise generation
+  console.log(`isMoving: ${isMoving}, baseNoise: ${noise.baseNoise}`);
+}
+
+// Handle supply drops
+function supplyDropSystem(delta: number) {
+  supplyDropTimer -= delta;
+  if (supplyDropTimer <= 0) {
+    const drop = createEntity();
+    const x = (Math.random() - 0.5) * 50; // Random x within ±25
+    const z = (Math.random() - 0.5) * 50; // Random z within ±25
+    addTransform(drop, { position: [x, 0, z], velocity: [0, 0, 0] });
+    addSphereCollider(drop, { radius: 1 });
+    console.log(`Supply drop spawned at [${x.toFixed(2)}, 0, ${z.toFixed(2)}]`);
+    supplyDropTimer = 15 + Math.random() * 10; // Reset timer (15-25s)
+  }
+
+  // Check player collision with supply drops
+  const playerT = getTransform(player);
+  if (!playerT) return;
+
+  for (const e of activeEntities) {
+    const t = getTransform(e);
+    const c = getSphereCollider(e);
+    if (!t || !c || e === player || getThumper(e) || getIceDeposit(e) || getWormSegment(e)) continue;
+
+    const dx = t.position[0] - playerT.position[0];
+    const dy = t.position[1] - playerT.position[1];
+    const dz = t.position[2] - playerT.position[2];
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < c.radius + 1) { // Player radius = 1
+      thumperCount += 2;
+      activeEntities.delete(e);
+      console.log(`Collected supply drop! Thumpers: ${thumperCount}`);
+    }
+  }
+}
+
+// Main ship mining
+function mainShipSystem(delta: number, mainShip: Entity) {
+  const t = getTransform(mainShip);
+  const noise = getNoiseEmitter(mainShip);
+  if (!t || !noise) return;
+
+  noise.baseNoise = 0.4; // Constant noise from mining
+  noise.isEmitting = true;
+
+  // Auto-mine nearby ice deposits
+  for (const e of activeEntities) {
+    const deposit = getIceDeposit(e);
+    const depositT = getTransform(e);
+    if (!deposit || !depositT) continue;
+
+    const dx = depositT.position[0] - t.position[0];
+    const dz = depositT.position[2] - t.position[2];
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 10) { // Mining range
+      const mineRate = 5 * delta;
+      deposit.amount -= mineRate;
+      totalIceMined += mineRate;
+      if (deposit.amount <= 0) {
+        activeEntities.delete(e);
+      }
+      console.log(`Main ship mined ice! Total: ${totalIceMined.toFixed(2)}`);
+    }
+  }
 }
 
 // Global entity references
 let player: Entity;
 let wormHead: Entity;
+let mainShip: Entity;
 let renderer: ReturnType<typeof initRenderer>;
 let gameOver = false;
 
 function setupGame() {
-  // Spawn the worm well below the ground so it emerges when alerted
+  // Spawn the worm
   wormHead = createEntity();
   addTransform(wormHead, { position: [0, -100, 0], velocity: [0, 0, 0] });
-  addWormAI(wormHead, { alertLevel: 0, threshold: 1 }); // Lowered threshold to 1
+  addWormAI(wormHead, { alertLevel: 0, threshold: 1 });
   addSphereCollider(wormHead, { radius: 2 });
   addWormSegment(wormHead, { followDelay: 0 });
   const wormSegments: Entity[] = [wormHead];
-  // Add two body segments for a simple segmented worm
   for (let i = 1; i < 3; i++) {
     const seg = createEntity();
     addTransform(seg, {
-      position: [0, -100 - i * 1.5, 0], // Deeper underground
+      position: [0, -100 - i * 1.5, 0],
       velocity: [0, 0, 0],
     });
     addSphereCollider(seg, { radius: 2 - i * 0.3 });
@@ -193,25 +281,35 @@ function setupGame() {
   (window as any).wormSegments = wormSegments;
   (window as any).wormHead = wormHead;
 
-  // Create the player
+  // Create the player at a safer distance from the worm
   player = createEntity();
-  addTransform(player, { position: [0, 0, 0], velocity: [0, 0, 0] });
+  addTransform(player, { position: [50, 0, 50], velocity: [0, 0, 0] }); // Moved farther away
   addNoiseEmitter(player, { baseNoise: 0, isEmitting: false });
   addSphereCollider(player, { radius: 1 });
   (window as any).player = player;
 
-  // Create an ice deposit resource
-  const deposit = createEntity();
-  addTransform(deposit, { position: [10, 0, 10], velocity: [0, 0, 0] });
-  addIceDeposit(deposit, { amount: 100 });
-  addSphereCollider(deposit, { radius: 2 });
+  // Create the main ship (miner)
+  mainShip = createEntity();
+  addTransform(mainShip, { position: [0, 0, 0], velocity: [0, 0, 0] });
+  addNoiseEmitter(mainShip, { baseNoise: 0.4, isEmitting: true });
+  addSphereCollider(mainShip, { radius: 3 });
+  (window as any).mainShip = mainShip;
+
+  // Create initial ice deposits
+  for (let i = 0; i < 3; i++) {
+    const deposit = createEntity();
+    const x = (Math.random() - 0.5) * 20;
+    const z = (Math.random() - 0.5) * 20;
+    addTransform(deposit, { position: [x, 0, z], velocity: [0, 0, 0] });
+    addIceDeposit(deposit, { amount: 100 });
+    addSphereCollider(deposit, { radius: 2 });
+  }
 }
 
 async function main() {
   const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
   renderer = initRenderer(canvas);
 
-  // Switch between mobile or desktop input
   setupInput();
   setupGame();
 
@@ -228,6 +326,17 @@ async function main() {
       return;
     }
 
+    // Update game state
+    roundTimeLeft -= deltaSec;
+    if (roundTimeLeft <= 0) {
+      console.log(`Round ${roundNumber} Over! Ice Mined: ${totalIceMined.toFixed(2)}`);
+      roundNumber++;
+      roundTimeLeft = 60;
+      const wormT = getTransform(wormHead);
+      if (wormT) wormT.position = [0, -100, 0];
+      thumperCount = Math.min(thumperCount + 1, 5);
+    }
+
     updatePlayer(player);
     physicsSystem(deltaSec);
     collisionSystem(deltaSec);
@@ -235,16 +344,56 @@ async function main() {
     aiSystem(wormHead, deltaSec);
     wormBodySystem(deltaSec);
     miningSystem(deltaSec, player);
+    supplyDropSystem(deltaSec);
+    mainShipSystem(deltaSec, mainShip);
 
-    // Check if worm head is close enough to the player for game over
-    const pT = getTransform(player);
+    // Detect worm emergence and spawn cracks
     const wT = getTransform(wormHead);
+    if (wT) {
+      if (wasUnderground && wT.position[1] >= 0) {
+        // Worm has emerged! Spawn crack objects
+        for (let i = 0; i < 5; i++) {
+          const crack = createEntity();
+          const offsetX = (Math.random() - 0.5) * 10; // Random spread within ±5 units
+          const offsetZ = (Math.random() - 0.5) * 10;
+          addTransform(crack, {
+            position: [wT.position[0] + offsetX, 0, wT.position[2] + offsetZ],
+            velocity: [0, 0, 0],
+          });
+          addCrack(crack, { lifespan: 2 }); // Cracks last 2 seconds
+          addSphereCollider(crack, { radius: 0.5 }); // Small size
+        }
+        wasUnderground = false;
+      } else if (wT.position[1] < 0) {
+        wasUnderground = true;
+      }
+    }
+
+    // Update cracks
+    for (const e of activeEntities) {
+      const crack = getCrack(e);
+      if (crack) {
+        crack.lifespan -= deltaSec;
+        if (crack.lifespan <= 0) {
+          removeEntity(e);
+        }
+      }
+    }
+
+    // Check if worm head is close to main ship or player
+    const pT = getTransform(player);
+    const mT = getTransform(mainShip);
     if (pT && wT) {
-      const dx = pT.position[0] - wT.position[0];
-      const dy = pT.position[1] - wT.position[1];
-      const dz = pT.position[2] - wT.position[2];
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist < 3) gameOver = true;
+      const dxP = pT.position[0] - wT.position[0];
+      const dyP = pT.position[1] - wT.position[1];
+      const dzP = pT.position[2] - wT.position[2];
+      if (Math.sqrt(dxP * dxP + dyP * dyP + dzP * dzP) < 3) gameOver = true;
+    }
+    if (mT && wT) {
+      const dxM = mT.position[0] - wT.position[0];
+      const dyM = mT.position[1] - wT.position[1];
+      const dzM = mT.position[2] - wT.position[2];
+      if (Math.sqrt(dxM * dxM + dyM * dyM + dzM * dzM) < 5) gameOver = true;
     }
 
     renderer.render([...activeEntities], false);

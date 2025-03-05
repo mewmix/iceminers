@@ -1,4 +1,4 @@
-//ecs.ts
+// ecs.ts
 export type Entity = number;
 
 let nextEntityId = 0;
@@ -37,9 +37,14 @@ export interface Thumper {
   duration: number; // seconds before deactivation
 }
 
-// Ice deposit component  resource to mine
+// Ice deposit component resource to mine
 export interface IceDeposit {
   amount: number;
+}
+
+// Crack component for ground sinking effect
+export interface Crack {
+  lifespan: number; // Time in seconds until the crack disappears
 }
 
 // Internal storage arrays
@@ -50,6 +55,7 @@ const sphereColliders: Array<SphereCollider | null> = [];
 const wormSegments: Array<WormSegment | null> = [];
 const thumpers: Array<Thumper | null> = [];
 const iceDeposits: Array<IceDeposit | null> = [];
+const cracks: Array<Crack | null> = []; // Added for Crack component
 
 /** Create a new entity and reserve component slots. */
 export function createEntity(): Entity {
@@ -62,6 +68,7 @@ export function createEntity(): Entity {
   wormSegments[e] = null;
   thumpers[e] = null;
   iceDeposits[e] = null;
+  cracks[e] = null; // Initialize Crack component slot
   return e;
 }
 
@@ -75,6 +82,7 @@ export function removeEntity(e: Entity) {
   wormSegments[e] = null;
   thumpers[e] = null;
   iceDeposits[e] = null;
+  cracks[e] = null; // Clear Crack component slot
 }
 
 /** Attach components. */
@@ -85,6 +93,7 @@ export function addSphereCollider(e: Entity, c: SphereCollider) { sphereCollider
 export function addWormSegment(e: Entity, c: WormSegment) { wormSegments[e] = c; }
 export function addThumper(e: Entity, c: Thumper) { thumpers[e] = c; }
 export function addIceDeposit(e: Entity, c: IceDeposit) { iceDeposits[e] = c; }
+export function addCrack(e: Entity, c: Crack) { cracks[e] = c; } // Added to attach Crack component
 
 /** Component getters. */
 export function getTransform(e: Entity) { return transforms[e]; }
@@ -94,4 +103,4 @@ export function getSphereCollider(e: Entity) { return sphereColliders[e]; }
 export function getWormSegment(e: Entity) { return wormSegments[e]; }
 export function getThumper(e: Entity) { return thumpers[e]; }
 export function getIceDeposit(e: Entity) { return iceDeposits[e]; }
-
+export function getCrack(e: Entity) { return cracks[e]; } // Added to retrieve Crack component

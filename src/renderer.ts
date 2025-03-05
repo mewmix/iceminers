@@ -1,6 +1,13 @@
 // src/renderer.ts
 import * as THREE from "three";
-import { Entity, getTransform, getSphereCollider, getNoiseEmitter } from "./ecs";
+import {
+  Entity,
+  getTransform,
+  getSphereCollider,
+  getNoiseEmitter,
+  getCrack,    // Added for rendering cracks
+  getWormAI,   // Added for accessing worm AI directly
+} from "./ecs";
 
 // HUD Elements
 let hudContainer: HTMLDivElement;
@@ -76,7 +83,8 @@ function updateHUD(
   alertLevel: number,
   alertThreshold: number,
   playerPos: THREE.Vector3,
-  wormPos: THREE.Vector3
+  wormPos: THREE.Vector3,
+  mainShipPos: THREE.Vector3 // Added parameter for main ship position
 ) {
   // Update noise meter
   const noiseBar = noiseMeter.querySelector("#noise-bar") as HTMLElement;
@@ -95,7 +103,7 @@ function updateHUD(
   // Update radar
   const ctx = radarCanvas.getContext("2d")!;
   ctx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
-  
+
   // Draw radar background
   ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
   ctx.beginPath();
@@ -109,18 +117,36 @@ function updateHUD(
   ctx.fill();
 
   // Draw worm
-  const direction = new THREE.Vector3()
+  const wormDirection = new THREE.Vector3()
     .subVectors(wormPos, playerPos)
     .normalize();
-  const angle = Math.atan2(direction.z, direction.x);
-  const distance = Math.min(1, playerPos.distanceTo(wormPos) / 100);
-  
+  const wormAngle = Math.atan2(wormDirection.z, wormDirection.x);
+  const wormDistance = Math.min(1, playerPos.distanceTo(wormPos) / 100);
   ctx.fillStyle = "#F44336";
   ctx.beginPath();
   ctx.arc(
-    75 + Math.cos(angle) * 65 * distance,
-    75 + Math.sin(angle) * 65 * distance,
-    8, 0, Math.PI * 2
+    75 + Math.cos(wormAngle) * 65 * wormDistance,
+    75 + Math.sin(wormAngle) * 65 * wormDistance,
+    8,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+
+  // Draw main ship
+  const shipDirection = new THREE.Vector3()
+    .subVectors(mainShipPos, playerPos)
+    .normalize();
+  const shipAngle = Math.atan2(shipDirection.z, shipDirection.x);
+  const shipDistance = Math.min(1, playerPos.distanceTo(mainShipPos) / 100);
+  ctx.fillStyle = "#FFFF00"; // Yellow for main ship
+  ctx.beginPath();
+  ctx.arc(
+    75 + Math.cos(shipAngle) * 65 * shipDistance,
+    75 + Math.sin(shipAngle) * 65 * shipDistance,
+    6,
+    0,
+    Math.PI * 2
   );
   ctx.fill();
 }
@@ -160,7 +186,7 @@ export function initRenderer(canvas: HTMLCanvasElement) {
   // Entity management
   const entityMeshes = new Map<Entity, THREE.Mesh>();
   createHUD();
-  
+
   // Handle window resize
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -176,7 +202,8 @@ export function initRenderer(canvas: HTMLCanvasElement) {
     render: (entities: Entity[], gameOver: boolean) => {
       const player = (window as any).player;
       const worm = (window as any).wormHead;
-      
+      const mainShip = (window as any).mainShip; // Access main ship entity
+
       // Update camera
       const playerT = getTransform(player);
       if (playerT) {
@@ -188,17 +215,18 @@ export function initRenderer(canvas: HTMLCanvasElement) {
 
       // Update HUD
       const noiseEmitter = getNoiseEmitter(player);
-      const wormAI = (window as any).wormAI;
+      const wormAI = getWormAI(worm); // Use getter instead of window variable
       if (playerT && noiseEmitter && wormAI) {
         const wormPos = new THREE.Vector3(...getTransform(worm)?.position || [0, 0, 0]);
+        const mainShipPos = new THREE.Vector3(...getTransform(mainShip)?.position || [0, 0, 0]);
         updateHUD(
           noiseEmitter.baseNoise,
           wormAI.alertLevel,
           wormAI.threshold,
           new THREE.Vector3(...playerT.position),
-          wormPos
+          wormPos,
+          mainShipPos // Pass main ship position to HUD
         );
-        
       }
 
       // Update entities
@@ -209,12 +237,23 @@ export function initRenderer(canvas: HTMLCanvasElement) {
 
         let mesh = entityMeshes.get(e);
         if (!mesh) {
-          const geometry = new THREE.SphereGeometry(s.radius, 16, 16);
+          // Use a cube for the main ship, spheres for others
+          const geometry = e === mainShip ? new THREE.BoxGeometry(3, 3, 3) : new THREE.SphereGeometry(s.radius, 16, 16);
           const material = new THREE.MeshStandardMaterial({
-            color: e === player ? 0xff0000 : 0x333333,
             metalness: 0.3,
-            roughness: 0.8
+            roughness: 0.8,
           });
+          if (getCrack(e)) {
+            material.color.set(0x555555); // Grey for cracks
+            material.opacity = 0.5;       // Semi-transparent
+            material.transparent = true;
+          } else if (e === player) {
+            material.color.set(0xff0000); // Red for player
+          } else if (e === mainShip) {
+            material.color.set(0xffff00); // Yellow for main ship
+          } else {
+            material.color.set(0x333333); // Dark grey for others
+          }
           mesh = new THREE.Mesh(geometry, material);
           entityMeshes.set(e, mesh);
           scene.add(mesh);
