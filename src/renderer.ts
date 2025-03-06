@@ -1,12 +1,11 @@
-// src/renderer.ts
 import * as THREE from "three";
 import {
   Entity,
   getTransform,
   getSphereCollider,
   getNoiseEmitter,
-  getCrack,    // Added for rendering cracks
-  getWormAI,   // Added for accessing worm AI directly
+  getCrack,
+  getWormAI,
 } from "./ecs";
 
 // HUD Elements
@@ -14,6 +13,8 @@ let hudContainer: HTMLDivElement;
 let noiseMeter: HTMLDivElement;
 let alertMeter: HTMLDivElement;
 let radarCanvas: HTMLCanvasElement;
+let iceMinedDisplay: HTMLDivElement;     // New HUD element for ice mined
+let thumperCountDisplay: HTMLDivElement; // New HUD element for thumper count
 
 function createHUD() {
   // Container for all HUD elements
@@ -72,9 +73,38 @@ function createHUD() {
     border-radius: 50%;
   `;
 
+  // Ice Mined Display
+  iceMinedDisplay = document.createElement("div");
+  iceMinedDisplay.style.cssText = `
+    position: absolute;
+    top: 60px;
+    left: 20px;
+    background: rgba(0,0,0,0.7);
+    padding: 5px;
+    color: white;
+    border-radius: 5px;
+  `;
+  iceMinedDisplay.innerHTML = `Ice Mined: <span id="ice-mined">0</span>`;
+
+  // Thumper Count Display
+  thumperCountDisplay = document.createElement("div");
+  thumperCountDisplay.style.cssText = `
+    position: absolute;
+    top: 90px;
+    left: 20px;
+    background: rgba(0,0,0,0.7);
+    padding: 5px;
+    color: white;
+    border-radius: 5px;
+  `;
+  thumperCountDisplay.innerHTML = `Thumpers: <span id="thumper-count">3</span>`;
+
+  // Append all HUD elements to the container
   hudContainer.appendChild(noiseMeter);
   hudContainer.appendChild(alertMeter);
   hudContainer.appendChild(radarCanvas);
+  hudContainer.appendChild(iceMinedDisplay);
+  hudContainer.appendChild(thumperCountDisplay);
   document.body.appendChild(hudContainer);
 }
 
@@ -84,7 +114,9 @@ function updateHUD(
   alertThreshold: number,
   playerPos: THREE.Vector3,
   wormPos: THREE.Vector3,
-  mainShipPos: THREE.Vector3 // Added parameter for main ship position
+  mainShipPos: THREE.Vector3,
+  iceMined: number,         // New parameter
+  thumperCount: number      // New parameter
 ) {
   // Update noise meter
   const noiseBar = noiseMeter.querySelector("#noise-bar") as HTMLElement;
@@ -139,7 +171,7 @@ function updateHUD(
     .normalize();
   const shipAngle = Math.atan2(shipDirection.z, shipDirection.x);
   const shipDistance = Math.min(1, playerPos.distanceTo(mainShipPos) / 100);
-  ctx.fillStyle = "#FFFF00"; // Yellow for main ship
+  ctx.fillStyle = "#FFFF00";
   ctx.beginPath();
   ctx.arc(
     75 + Math.cos(shipAngle) * 65 * shipDistance,
@@ -149,6 +181,18 @@ function updateHUD(
     Math.PI * 2
   );
   ctx.fill();
+
+  // Update ice mined display
+  const iceMinedSpan = iceMinedDisplay.querySelector("#ice-mined") as HTMLSpanElement;
+  if (iceMinedSpan) {
+    iceMinedSpan.textContent = iceMined.toFixed(2); // Display with 2 decimal places
+  }
+
+  // Update thumper count display
+  const thumperCountSpan = thumperCountDisplay.querySelector("#thumper-count") as HTMLSpanElement;
+  if (thumperCountSpan) {
+    thumperCountSpan.textContent = thumperCount.toString();
+  }
 }
 
 export function initRenderer(canvas: HTMLCanvasElement) {
@@ -199,10 +243,10 @@ export function initRenderer(canvas: HTMLCanvasElement) {
     camera,
     renderer,
     entityMeshes,
-    render: (entities: Entity[], gameOver: boolean) => {
+    render: (entities: Entity[], gameOver: boolean, iceMined: number, thumperCount: number) => {
       const player = (window as any).player;
       const worm = (window as any).wormHead;
-      const mainShip = (window as any).mainShip; // Access main ship entity
+      const mainShip = (window as any).mainShip;
 
       // Update camera
       const playerT = getTransform(player);
@@ -215,17 +259,19 @@ export function initRenderer(canvas: HTMLCanvasElement) {
 
       // Update HUD
       const noiseEmitter = getNoiseEmitter(player);
-      const wormAI = getWormAI(worm); // Use getter instead of window variable
+      const wormAI = getWormAI(worm);
       if (playerT && noiseEmitter && wormAI) {
-        const wormPos = new THREE.Vector3(...getTransform(worm)?.position || [0, 0, 0]);
-        const mainShipPos = new THREE.Vector3(...getTransform(mainShip)?.position || [0, 0, 0]);
+        const wormPos = new THREE.Vector3(...(getTransform(worm)?.position || [0, 0, 0]));
+        const mainShipPos = new THREE.Vector3(...(getTransform(mainShip)?.position || [0, 0, 0]));
         updateHUD(
           noiseEmitter.baseNoise,
           wormAI.alertLevel,
           wormAI.threshold,
           new THREE.Vector3(...playerT.position),
           wormPos,
-          mainShipPos // Pass main ship position to HUD
+          mainShipPos,
+          iceMined,
+          thumperCount
         );
       }
 
@@ -237,28 +283,35 @@ export function initRenderer(canvas: HTMLCanvasElement) {
 
         let mesh = entityMeshes.get(e);
         if (!mesh) {
-          // Use a cube for the main ship, spheres for others
           const geometry = e === mainShip ? new THREE.BoxGeometry(3, 3, 3) : new THREE.SphereGeometry(s.radius, 16, 16);
           const material = new THREE.MeshStandardMaterial({
             metalness: 0.3,
             roughness: 0.8,
           });
           if (getCrack(e)) {
-            material.color.set(0x555555); // Grey for cracks
-            material.opacity = 0.5;       // Semi-transparent
+            material.color.set(0x555555);
+            material.opacity = 0.5;
             material.transparent = true;
           } else if (e === player) {
-            material.color.set(0xff0000); // Red for player
+            material.color.set(0xff0000);
           } else if (e === mainShip) {
-            material.color.set(0xffff00); // Yellow for main ship
+            material.color.set(0xffff00);
           } else {
-            material.color.set(0x333333); // Dark grey for others
+            material.color.set(0x333333);
           }
           mesh = new THREE.Mesh(geometry, material);
           entityMeshes.set(e, mesh);
           scene.add(mesh);
         }
         mesh.position.set(...t.position);
+      });
+
+      // Clean up meshes for entities that no longer exist
+      entityMeshes.forEach((mesh, e) => {
+        if (!entities.includes(e)) {
+          scene.remove(mesh);
+          entityMeshes.delete(e);
+        }
       });
 
       renderer.render(scene, camera);
